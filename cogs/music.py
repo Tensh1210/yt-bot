@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.player import GuildPlayerRegistry
+from core.player import GuildPlayerRegistry, PlaybackStartError
 from core.ytdlp_source import TrackLookupError, resolve_track
 
 
@@ -35,7 +35,10 @@ class Music(commands.Cog):
             return str(exc)
 
         player = self.players.for_guild(guild.id)
-        position = await player.enqueue(track, voice.channel)
+        try:
+            position = await player.enqueue(track, voice.channel)
+        except PlaybackStartError as exc:
+            return str(exc)
 
         if position == 0:
             return f"Playing now: {track.title}"
@@ -116,6 +119,13 @@ class Music(commands.Cog):
     @app_commands.command(name="queue", description="Show the current queue.")
     async def slash_queue(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(await self._control(interaction, "queue"))
+
+    @prefix_play.error
+    async def prefix_play_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply("Usage: `!play <YouTube URL or keywords>`", mention_author=False)
+            return
+        raise error
 
 
 async def setup(bot: commands.Bot) -> None:

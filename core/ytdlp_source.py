@@ -9,6 +9,7 @@ import yt_dlp
 
 
 MAX_QUERY_LENGTH = 200
+MAX_ERROR_LENGTH = 300
 
 
 class TrackLookupError(Exception):
@@ -20,6 +21,20 @@ class Track:
     title: str
     webpage_url: str
     stream_url: str
+
+
+def _clean_error_message(error: Exception) -> str:
+    message = str(error).strip()
+    if not message:
+        return "Unknown extractor error."
+
+    if message.startswith("ERROR: "):
+        message = message.removeprefix("ERROR: ").strip()
+
+    if len(message) > MAX_ERROR_LENGTH:
+        message = f"{message[:MAX_ERROR_LENGTH].rstrip()}..."
+
+    return message
 
 
 def _is_url(value: str) -> bool:
@@ -70,4 +85,6 @@ async def resolve_track(query: str) -> Track:
     except TrackLookupError:
         raise
     except yt_dlp.utils.DownloadError as exc:
-        raise TrackLookupError(f"Could not resolve track: {exc}") from exc
+        raise TrackLookupError(f"Could not resolve track: {_clean_error_message(exc)}") from exc
+    except Exception as exc:
+        raise TrackLookupError(f"Unexpected extractor error: {_clean_error_message(exc)}") from exc
