@@ -41,10 +41,54 @@ class Music(commands.Cog):
             return f"Playing now: {track.title}"
         return f"Queued #{position}: {track.title}"
 
+    def _player_for(self, interaction_or_context: discord.Interaction | commands.Context):
+        guild = interaction_or_context.guild
+        if guild is None:
+            return None
+        return self.players.for_guild(guild.id)
+
+    async def _control(self, interaction_or_context: discord.Interaction | commands.Context, action: str) -> str:
+        player = self._player_for(interaction_or_context)
+        if player is None:
+            return "This command only works in a server."
+
+        if action == "pause":
+            return await player.pause()
+        if action == "resume":
+            return await player.resume()
+        if action == "skip":
+            return await player.skip()
+        if action == "stop":
+            return await player.stop()
+        if action == "queue":
+            return await player.queue_summary()
+
+        return "Unknown command."
+
     @commands.command(name="play")
     async def prefix_play(self, ctx: commands.Context, *, query: str = "") -> None:
         message = await self._play(ctx, query)
         await ctx.reply(message, mention_author=False)
+
+    @commands.command(name="pause")
+    async def prefix_pause(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "pause"), mention_author=False)
+
+    @commands.command(name="resume")
+    async def prefix_resume(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "resume"), mention_author=False)
+
+    @commands.command(name="skip")
+    async def prefix_skip(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "skip"), mention_author=False)
+
+    @commands.command(name="stop")
+    async def prefix_stop(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "stop"), mention_author=False)
+
+    @commands.command(name="queue")
+    async def prefix_queue(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "queue"), mention_author=False)
 
     @app_commands.command(name="play", description="Play a YouTube URL or keyword search result.")
     @app_commands.describe(query="YouTube URL or search keywords")
@@ -52,6 +96,26 @@ class Music(commands.Cog):
         await interaction.response.defer()
         message = await self._play(interaction, query)
         await interaction.followup.send(message)
+
+    @app_commands.command(name="pause", description="Pause the current track.")
+    async def slash_pause(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "pause"))
+
+    @app_commands.command(name="resume", description="Resume the paused track.")
+    async def slash_resume(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "resume"))
+
+    @app_commands.command(name="skip", description="Skip the current track.")
+    async def slash_skip(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "skip"))
+
+    @app_commands.command(name="stop", description="Stop playback and clear the queue.")
+    async def slash_stop(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "stop"))
+
+    @app_commands.command(name="queue", description="Show the current queue.")
+    async def slash_queue(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "queue"))
 
 
 async def setup(bot: commands.Bot) -> None:
