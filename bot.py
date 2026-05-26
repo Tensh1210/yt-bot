@@ -12,7 +12,17 @@ class MusicBot(commands.Bot):
         await self.load_extension("cogs.music")
 
         if os.getenv("SYNC_SLASH_COMMANDS", "1") == "1":
-            await self.tree.sync()
+            guild_id = os.getenv("DISCORD_GUILD_ID")
+            if guild_id:
+                try:
+                    guild = discord.Object(id=int(guild_id))
+                except ValueError as exc:
+                    raise RuntimeError("DISCORD_GUILD_ID must be a numeric Discord server ID") from exc
+
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+            else:
+                await self.tree.sync()
 
 
 async def main() -> None:
