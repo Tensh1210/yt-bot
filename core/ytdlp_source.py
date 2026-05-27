@@ -137,6 +137,7 @@ def _extract(query: str) -> Track:
         "quiet": True,
         "default_search": "ytsearch1",
         "noplaylist": True,
+        "remote_components": {"ejs": "github"},
     }
 
     start = time.perf_counter()
@@ -192,6 +193,7 @@ def _extract_playlist(query: str) -> PlaylistLookup:
         "playlistend": max_items + 1,
         "quiet": True,
         "skip_download": True,
+        "remote_components": {"ejs": "github"},
     }
 
     start = time.perf_counter()
