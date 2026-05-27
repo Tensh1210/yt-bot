@@ -27,6 +27,7 @@ class QueuedTrack:
     track: TrackRequest
     voice_channel: discord.VoiceChannel | discord.StageChannel
     notify_channel: discord.abc.Messageable | None = None
+    playlist_id: int | None = None
 
 
 class PlaybackStartError(Exception):
@@ -63,6 +64,8 @@ class GuildPlayer:
         self._stop_requested = False
         self._playback_generation = 0
         self._playback_failures = 0
+        self._playlist_counter = 0
+        self._current_playlist_id: int | None = None
 
     async def enqueue(
         self,
@@ -103,6 +106,8 @@ class GuildPlayer:
             if available_slots <= 0:
                 raise QueueFullError(f"Queue is full. Limit is {max_queue_size} tracks.")
 
+            self._playlist_counter += 1
+            pid = self._playlist_counter
             accepted_tracks = tracks[:available_slots]
             for track in accepted_tracks:
                 self.queue.append(
@@ -110,6 +115,7 @@ class GuildPlayer:
                         track=_to_track_request(track),
                         voice_channel=voice_channel,
                         notify_channel=notify_channel,
+                        playlist_id=pid,
                     )
                 )
 
@@ -151,6 +157,21 @@ class GuildPlayer:
             skipped = self.current.title if self.current else "current track"
             self.voice_client.stop()
             return f"Skipped: {skipped}"
+
+    async def skip_playlist(self) -> str:
+        async with self.lock:
+            if self._current_playlist_id is None:
+                return "No playlist is currently playing."
+
+            pid = self._current_playlist_id
+            removed = sum(1 for q in self.queue if q.playlist_id == pid)
+            self.queue = deque(q for q in self.queue if q.playlist_id != pid)
+            self._current_playlist_id = None
+
+            if self.voice_client and (self.voice_client.is_playing() or self.voice_client.is_paused()):
+                self.voice_client.stop()
+
+            return f"Skipped playlist. Removed {removed} tracks from queue."
 
     async def stop(self) -> str:
         async with self.lock:
@@ -206,6 +227,7 @@ class GuildPlayer:
         self._stop_requested = False
         queued = self.queue.popleft()
         self.current = None
+        self._current_playlist_id = queued.playlist_id
 
         try:
             start = time.perf_counter()

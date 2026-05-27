@@ -114,6 +114,8 @@ class Music(commands.Cog):
             return await player.skip()
         if action == "stop":
             return await player.stop()
+        if action == "skipplaylist":
+            return await player.skip_playlist()
         if action == "queue":
             return await player.queue_summary()
         if action == "nowplaying":
@@ -137,6 +139,10 @@ class Music(commands.Cog):
     @commands.command(name="skip")
     async def prefix_skip(self, ctx: commands.Context) -> None:
         await ctx.reply(await self._control(ctx, "skip"), mention_author=False)
+
+    @commands.command(name="skipplaylist", aliases=["skipp"])
+    async def prefix_skipplaylist(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "skipplaylist"), mention_author=False)
 
     @commands.command(name="stop")
     async def prefix_stop(self, ctx: commands.Context) -> None:
@@ -168,6 +174,10 @@ class Music(commands.Cog):
     @app_commands.command(name="skip", description="Skip the current track.")
     async def slash_skip(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(await self._control(interaction, "skip"))
+
+    @app_commands.command(name="skipplaylist", description="Skip the current playlist and remove its tracks from queue.")
+    async def slash_skipplaylist(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "skipplaylist"))
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue.")
     async def slash_stop(self, interaction: discord.Interaction) -> None:
