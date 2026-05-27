@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 import yt_dlp
+from ytmusicapi import YTMusic
 
 
 MAX_QUERY_LENGTH = 200
 MAX_ERROR_LENGTH = 300
 LOOKUP_TIMEOUT_SECONDS = 15
+YTMUSIC_WATCH_URL = "https://music.youtube.com/watch?v="
 
 
 class TrackLookupError(Exception):
@@ -43,10 +47,34 @@ def _is_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _resolve_ytmusic_query(query: str) -> str | None:
+    try:
+        ytmusic = YTMusic()
+        results = ytmusic.search(query, filter="songs", limit=1)
+    except Exception as exc:
+        logging.warning("YouTube Music search failed for %r: %s", query, exc)
+        return None
+
+    if not results:
+        return None
+
+    video_id = results[0].get("videoId")
+    if not video_id:
+        return None
+
+    return f"{YTMUSIC_WATCH_URL}{video_id}"
+
+
 def _extract(query: str) -> Track:
-    ydl_query = query if _is_url(query) else f"ytsearch1:{query}"
+    if _is_url(query):
+        ydl_query = query
+    elif os.getenv("SEARCH_PROVIDER", "ytmusic").lower() == "ytmusic":
+        ydl_query = _resolve_ytmusic_query(query) or f"ytsearch1:{query}"
+    else:
+        ydl_query = f"ytsearch1:{query}"
+
     options: dict[str, Any] = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[abr<=160]/bestaudio/best",
         "quiet": True,
         "default_search": "ytsearch1",
         "noplaylist": True,

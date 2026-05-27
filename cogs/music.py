@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.player import GuildPlayerRegistry, PlaybackStartError
+from core.player import GuildPlayerRegistry, PlaybackStartError, QueueFullError
 from core.ytdlp_source import TrackLookupError, resolve_track
 
 
@@ -42,7 +42,7 @@ class Music(commands.Cog):
         notify_channel = getattr(interaction_or_context, "channel", None)
         try:
             position = await player.enqueue(track, voice.channel, notify_channel)
-        except PlaybackStartError as exc:
+        except (PlaybackStartError, QueueFullError) as exc:
             return str(exc)
 
         if position == 0:
@@ -70,6 +70,8 @@ class Music(commands.Cog):
             return await player.stop()
         if action == "queue":
             return await player.queue_summary()
+        if action == "nowplaying":
+            return await player.now_playing()
 
         return "Unknown command."
 
@@ -98,6 +100,10 @@ class Music(commands.Cog):
     async def prefix_queue(self, ctx: commands.Context) -> None:
         await ctx.reply(await self._control(ctx, "queue"), mention_author=False)
 
+    @commands.command(name="nowplaying", aliases=["np"])
+    async def prefix_nowplaying(self, ctx: commands.Context) -> None:
+        await ctx.reply(await self._control(ctx, "nowplaying"), mention_author=False)
+
     @app_commands.command(name="play", description="Play a YouTube URL or keyword search result.")
     @app_commands.describe(query="YouTube URL or search keywords")
     async def slash_play(self, interaction: discord.Interaction, query: str) -> None:
@@ -124,6 +130,10 @@ class Music(commands.Cog):
     @app_commands.command(name="queue", description="Show the current queue.")
     async def slash_queue(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(await self._control(interaction, "queue"))
+
+    @app_commands.command(name="nowplaying", description="Show the current track.")
+    async def slash_nowplaying(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(await self._control(interaction, "nowplaying"))
 
     @prefix_play.error
     async def prefix_play_error(self, ctx: commands.Context, error: commands.CommandError) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import deque
 from dataclasses import dataclass
 
@@ -12,6 +13,7 @@ from core.ytdlp_source import Track
 
 DISCORD_MESSAGE_LIMIT = 2000
 MAX_PLAYBACK_FAILURES = 2
+DEFAULT_MAX_QUEUE_SIZE = 50
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
@@ -28,6 +30,19 @@ class QueuedTrack:
 
 class PlaybackStartError(Exception):
     pass
+
+
+class QueueFullError(Exception):
+    pass
+
+
+def _max_queue_size() -> int:
+    raw_value = os.getenv("MAX_QUEUE_SIZE", str(DEFAULT_MAX_QUEUE_SIZE))
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return DEFAULT_MAX_QUEUE_SIZE
+    return max(1, value)
 
 
 class GuildPlayer:
@@ -49,6 +64,9 @@ class GuildPlayer:
         notify_channel: discord.abc.Messageable | None = None,
     ) -> int:
         async with self.lock:
+            if len(self.queue) >= _max_queue_size():
+                raise QueueFullError(f"Queue is full. Limit is {_max_queue_size()} tracks.")
+
             self.queue.append(QueuedTrack(track=track, voice_channel=voice_channel, notify_channel=notify_channel))
             position = len(self.queue)
 
@@ -60,6 +78,12 @@ class GuildPlayer:
                 return 0
 
             return position
+
+    async def now_playing(self) -> str:
+        async with self.lock:
+            if self.current is None:
+                return "Nothing is playing."
+            return f"Now playing: {self.current.title}"
 
     async def pause(self) -> str:
         async with self.lock:
@@ -116,7 +140,7 @@ class GuildPlayer:
                 lines.append("Nothing is playing.")
 
             if self.queue:
-                lines.append("Up next:")
+                lines.append(f"Up next ({len(self.queue)} queued):")
                 for index, queued in enumerate(list(self.queue)[:limit], start=1):
                     lines.append(f"{index}. {queued.track.title}")
 

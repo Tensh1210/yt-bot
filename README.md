@@ -6,9 +6,9 @@ Private-server Discord music bot MVP using `discord.py`, `yt-dlp`, and FFmpeg.
 
 - Prefix and slash commands.
 - YouTube URL playback.
-- Keyword search playback with `ytsearch1`.
+- Keyword search playback, with YouTube Music search preferred and `ytsearch1` fallback.
 - Per-server in-memory queue.
-- `play`, `pause`, `resume`, `skip`, `stop`, and `queue`.
+- `play`, `pause`, `resume`, `skip`, `stop`, `queue`, and `nowplaying`.
 - Docker runtime with FFmpeg included.
 
 ## Discord Setup
@@ -36,9 +36,12 @@ DISCORD_TOKEN=replace-with-your-bot-token
 COMMAND_PREFIX=!
 SYNC_SLASH_COMMANDS=1
 DISCORD_GUILD_ID=
+SEARCH_PROVIDER=ytmusic
+MAX_QUEUE_SIZE=50
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
+Set `SEARCH_PROVIDER=ytdlp` if you want keyword search to skip YouTube Music and use direct `ytsearch1` fallback.
 
 ## Run Locally
 
@@ -72,6 +75,7 @@ Run these in a Discord server where the bot is installed:
 - `/play query:lofi hip hop`
 - Add a second track and verify it queues.
 - `!queue`
+- `!nowplaying`
 - `!pause`
 - `!resume`
 - `!skip`
