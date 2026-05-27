@@ -38,6 +38,8 @@ SYNC_SLASH_COMMANDS=1
 DISCORD_GUILD_ID=
 SEARCH_PROVIDER=ytmusic
 MAX_QUEUE_SIZE=50
+MAX_PLAYLIST_ITEMS=200
+PLAYLIST_LOOKUP_TIMEOUT_SECONDS=30
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
