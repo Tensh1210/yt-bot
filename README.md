@@ -36,7 +36,7 @@ DISCORD_TOKEN=replace-with-your-bot-token
 COMMAND_PREFIX=!
 SYNC_SLASH_COMMANDS=1
 DISCORD_GUILD_ID=
-SEARCH_PROVIDER=ytmusic
+SEARCH_PROVIDER=ytdlp
 MAX_QUEUE_SIZE=200
 MAX_PLAYLIST_ITEMS=200
 PLAYLIST_LOOKUP_TIMEOUT_SECONDS=30
@@ -44,7 +44,7 @@ PLAYLIST_SHUFFLE=1
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
-Set `SEARCH_PROVIDER=ytdlp` if you want keyword search to skip YouTube Music and use direct `ytsearch1` fallback.
+Set `SEARCH_PROVIDER=ytmusic` to use YouTube Music search instead of direct YouTube search.
 Set `PLAYLIST_SHUFFLE=0` to disable playlist shuffle and preserve the original playlist order.
 `MAX_PLAYLIST_ITEMS` caps how many tracks are imported from one playlist (default 200); `MAX_QUEUE_SIZE` caps the total queue size across all enqueued tracks.
 

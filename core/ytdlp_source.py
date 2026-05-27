@@ -106,7 +106,7 @@ def _resolve_ytmusic_query(query: str) -> str | None:
     start = time.perf_counter()
     try:
         ytmusic = YTMusic()
-        results = ytmusic.search(query, filter="videos", limit=1)
+        results = ytmusic.search(query, filter="songs", limit=1)
     except Exception as exc:
         logging.warning("YouTube Music search failed for %r: %s", query, exc)
         return None
@@ -127,7 +127,7 @@ def _resolve_ytmusic_query(query: str) -> str | None:
 def _extract(query: str) -> Track:
     if _is_url(query):
         ydl_query = query
-    elif os.getenv("SEARCH_PROVIDER", "ytmusic").lower() == "ytmusic":
+    elif os.getenv("SEARCH_PROVIDER", "ytdlp").lower() == "ytmusic":
         ydl_query = _resolve_ytmusic_query(query) or f"ytsearch1:{query}"
     else:
         ydl_query = f"ytsearch1:{query}"
