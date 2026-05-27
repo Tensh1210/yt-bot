@@ -39,8 +39,9 @@ class Music(commands.Cog):
             return str(exc)
 
         player = self.players.for_guild(guild.id)
+        notify_channel = getattr(interaction_or_context, "channel", None)
         try:
-            position = await player.enqueue(track, voice.channel)
+            position = await player.enqueue(track, voice.channel, notify_channel)
         except PlaybackStartError as exc:
             return str(exc)
 

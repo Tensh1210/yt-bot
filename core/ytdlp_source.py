@@ -10,6 +10,7 @@ import yt_dlp
 
 MAX_QUERY_LENGTH = 200
 MAX_ERROR_LENGTH = 300
+LOOKUP_TIMEOUT_SECONDS = 15
 
 
 class TrackLookupError(Exception):
@@ -81,7 +82,9 @@ async def resolve_track(query: str) -> Track:
         raise TrackLookupError(f"Query is too long. Keep it under {MAX_QUERY_LENGTH} characters.")
 
     try:
-        return await asyncio.to_thread(_extract, query)
+        return await asyncio.wait_for(asyncio.to_thread(_extract, query), timeout=LOOKUP_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as exc:
+        raise TrackLookupError(f"Track lookup timed out after {LOOKUP_TIMEOUT_SECONDS} seconds. Try again later.") from exc
     except TrackLookupError:
         raise
     except yt_dlp.utils.DownloadError as exc:

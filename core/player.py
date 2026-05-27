@@ -11,6 +11,7 @@ from core.ytdlp_source import Track
 
 
 DISCORD_MESSAGE_LIMIT = 2000
+MAX_PLAYBACK_FAILURES = 2
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
@@ -22,6 +23,7 @@ FFMPEG_OPTIONS = {
 class QueuedTrack:
     track: Track
     voice_channel: discord.VoiceChannel | discord.StageChannel
+    notify_channel: discord.abc.Messageable | None = None
 
 
 class PlaybackStartError(Exception):
@@ -37,10 +39,17 @@ class GuildPlayer:
         self.voice_client: discord.VoiceClient | None = None
         self.current: Track | None = None
         self._stop_requested = False
+        self._playback_generation = 0
+        self._playback_failures = 0
 
-    async def enqueue(self, track: Track, voice_channel: discord.VoiceChannel | discord.StageChannel) -> int:
+    async def enqueue(
+        self,
+        track: Track,
+        voice_channel: discord.VoiceChannel | discord.StageChannel,
+        notify_channel: discord.abc.Messageable | None = None,
+    ) -> int:
         async with self.lock:
-            self.queue.append(QueuedTrack(track=track, voice_channel=voice_channel))
+            self.queue.append(QueuedTrack(track=track, voice_channel=voice_channel, notify_channel=notify_channel))
             position = len(self.queue)
 
             if self.voice_client is None or (not self.voice_client.is_playing() and not self.voice_client.is_paused()):
@@ -82,6 +91,8 @@ class GuildPlayer:
             self.queue.clear()
             self.current = None
             self._stop_requested = True
+            self._playback_generation += 1
+            self._playback_failures = 0
 
             if self.voice_client is not None:
                 voice_client = self.voice_client
@@ -123,6 +134,7 @@ class GuildPlayer:
     async def _play_next_locked(self) -> None:
         if not self.queue:
             self.current = None
+            self._playback_failures = 0
             return
 
         self._stop_requested = False
@@ -136,10 +148,13 @@ class GuildPlayer:
                 await self.voice_client.move_to(queued.voice_channel)
 
             source = discord.FFmpegPCMAudio(queued.track.stream_url, **FFMPEG_OPTIONS)
+            self._playback_generation += 1
+            generation = self._playback_generation
             self.voice_client.play(
                 source,
-                after=lambda error: asyncio.run_coroutine_threadsafe(self._after_track(error), self.loop),
+                after=lambda error: asyncio.run_coroutine_threadsafe(self._after_track(error, generation), self.loop),
             )
+            self._playback_failures = 0
         except Exception as exc:
             self.current = None
             logging.warning("Could not start playback in guild %s: %s", self.guild_id, exc)
@@ -150,19 +165,52 @@ class GuildPlayer:
 
             raise PlaybackStartError("Could not join voice or start playback. Check bot voice permissions and FFmpeg.") from exc
 
-    async def _after_track(self, error: Exception | None) -> None:
+    async def _notify(self, channel: discord.abc.Messageable | None, message: str) -> None:
+        if channel is None:
+            return
+
+        try:
+            await channel.send(message[:DISCORD_MESSAGE_LIMIT])
+        except Exception as exc:
+            logging.warning("Could not send playback notification in guild %s: %s", self.guild_id, exc)
+
+    async def _after_track(self, error: Exception | None, generation: int) -> None:
         if error:
             logging.warning("Playback error in guild %s: %s", self.guild_id, error)
 
         async with self.lock:
+            if generation != self._playback_generation:
+                return
+
             if self._stop_requested:
                 self._stop_requested = False
                 return
 
-            try:
-                await self._play_next_locked()
-            except PlaybackStartError as exc:
-                logging.warning("Could not auto-start next track in guild %s: %s", self.guild_id, exc)
+            while self.queue:
+                next_queued = self.queue[0]
+
+                try:
+                    await self._play_next_locked()
+                    return
+                except PlaybackStartError as exc:
+                    self._playback_failures += 1
+                    logging.warning("Could not auto-start next track in guild %s: %s", self.guild_id, exc)
+                    await self._notify(
+                        next_queued.notify_channel,
+                        f"Skipped unavailable track: {next_queued.track.title}. Trying next...",
+                    )
+
+                    if self._playback_failures >= MAX_PLAYBACK_FAILURES:
+                        self.queue.clear()
+                        self.current = None
+                        await self._notify(
+                            next_queued.notify_channel,
+                            "Stopped after multiple playback failures.",
+                        )
+                        return
+
+            self.current = None
+            self._playback_failures = 0
 
 
 class GuildPlayerRegistry:
