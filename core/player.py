@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import discord
 
-from core.ytdlp_source import Track
+from core.ytdlp_source import Track, TrackLookupError, TrackRequest, resolve_track
 
 
 DISCORD_MESSAGE_LIMIT = 2000
@@ -24,7 +24,7 @@ FFMPEG_OPTIONS = {
 
 @dataclass
 class QueuedTrack:
-    track: Track
+    track: TrackRequest
     voice_channel: discord.VoiceChannel | discord.StageChannel
     notify_channel: discord.abc.Messageable | None = None
 
@@ -46,6 +46,12 @@ def _max_queue_size() -> int:
     return max(1, value)
 
 
+def _to_track_request(track: Track | TrackRequest) -> TrackRequest:
+    if isinstance(track, TrackRequest):
+        return track
+    return TrackRequest(title=track.title, webpage_url=track.webpage_url, stream_url=track.stream_url)
+
+
 class GuildPlayer:
     def __init__(self, guild_id: int, loop: asyncio.AbstractEventLoop) -> None:
         self.guild_id = guild_id
@@ -60,7 +66,7 @@ class GuildPlayer:
 
     async def enqueue(
         self,
-        track: Track,
+        track: Track | TrackRequest,
         voice_channel: discord.VoiceChannel | discord.StageChannel,
         notify_channel: discord.abc.Messageable | None = None,
     ) -> int:
@@ -68,7 +74,9 @@ class GuildPlayer:
             if len(self.queue) >= _max_queue_size():
                 raise QueueFullError(f"Queue is full. Limit is {_max_queue_size()} tracks.")
 
-            self.queue.append(QueuedTrack(track=track, voice_channel=voice_channel, notify_channel=notify_channel))
+            self.queue.append(
+                QueuedTrack(track=_to_track_request(track), voice_channel=voice_channel, notify_channel=notify_channel)
+            )
             position = len(self.queue)
 
             if self.voice_client is None or (not self.voice_client.is_playing() and not self.voice_client.is_paused()):
@@ -79,6 +87,39 @@ class GuildPlayer:
                 return 0
 
             return position
+
+    async def enqueue_many(
+        self,
+        tracks: list[TrackRequest],
+        voice_channel: discord.VoiceChannel | discord.StageChannel,
+        notify_channel: discord.abc.Messageable | None = None,
+    ) -> int:
+        async with self.lock:
+            if not tracks:
+                return 0
+
+            max_queue_size = _max_queue_size()
+            available_slots = max_queue_size - len(self.queue)
+            if available_slots <= 0:
+                raise QueueFullError(f"Queue is full. Limit is {max_queue_size} tracks.")
+
+            accepted_tracks = tracks[:available_slots]
+            for track in accepted_tracks:
+                self.queue.append(
+                    QueuedTrack(
+                        track=_to_track_request(track),
+                        voice_channel=voice_channel,
+                        notify_channel=notify_channel,
+                    )
+                )
+
+            if self.voice_client is None or (not self.voice_client.is_playing() and not self.voice_client.is_paused()):
+                try:
+                    await self._play_next_locked()
+                except PlaybackStartError:
+                    raise
+
+            return len(accepted_tracks)
 
     async def now_playing(self) -> str:
         async with self.lock:
@@ -164,16 +205,19 @@ class GuildPlayer:
 
         self._stop_requested = False
         queued = self.queue.popleft()
-        self.current = queued.track
+        self.current = None
 
         try:
             start = time.perf_counter()
+            track = await self._resolve_queued_track(queued)
+            self.current = track
+
             if self.voice_client is None or not self.voice_client.is_connected():
                 self.voice_client = await queued.voice_channel.connect()
             elif self.voice_client.channel != queued.voice_channel:
                 await self.voice_client.move_to(queued.voice_channel)
 
-            source = discord.FFmpegPCMAudio(queued.track.stream_url, **FFMPEG_OPTIONS)
+            source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTIONS)
             self._playback_generation += 1
             generation = self._playback_generation
             self.voice_client.play(
@@ -181,7 +225,16 @@ class GuildPlayer:
                 after=lambda error: asyncio.run_coroutine_threadsafe(self._after_track(error, generation), self.loop),
             )
             self._playback_failures = 0
-            logging.info("Started playback in guild %s for %r in %.2fs", self.guild_id, queued.track.title, time.perf_counter() - start)
+            logging.info(
+                "Started playback in guild %s for %r in %.2fs",
+                self.guild_id,
+                track.title,
+                time.perf_counter() - start,
+            )
+        except TrackLookupError as exc:
+            self.current = None
+            logging.warning("Could not resolve queued track in guild %s: %s", self.guild_id, exc)
+            raise PlaybackStartError(f"Could not resolve queued track: {exc}") from exc
         except Exception as exc:
             self.current = None
             logging.warning("Could not start playback in guild %s: %s", self.guild_id, exc)
@@ -191,6 +244,16 @@ class GuildPlayer:
             self.voice_client = None
 
             raise PlaybackStartError("Could not join voice or start playback. Check bot voice permissions and FFmpeg.") from exc
+
+    async def _resolve_queued_track(self, queued: QueuedTrack) -> Track:
+        if queued.track.stream_url:
+            return Track(
+                title=queued.track.title,
+                webpage_url=queued.track.webpage_url,
+                stream_url=queued.track.stream_url,
+            )
+
+        return await resolve_track(queued.track.webpage_url)
 
     async def _notify(self, channel: discord.abc.Messageable | None, message: str) -> None:
         if channel is None:
