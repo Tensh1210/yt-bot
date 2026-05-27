@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from collections import deque
 from dataclasses import dataclass
 
@@ -166,6 +167,7 @@ class GuildPlayer:
         self.current = queued.track
 
         try:
+            start = time.perf_counter()
             if self.voice_client is None or not self.voice_client.is_connected():
                 self.voice_client = await queued.voice_channel.connect()
             elif self.voice_client.channel != queued.voice_channel:
@@ -179,6 +181,7 @@ class GuildPlayer:
                 after=lambda error: asyncio.run_coroutine_threadsafe(self._after_track(error, generation), self.loop),
             )
             self._playback_failures = 0
+            logging.info("Started playback in guild %s for %r in %.2fs", self.guild_id, queued.track.title, time.perf_counter() - start)
         except Exception as exc:
             self.current = None
             logging.warning("Could not start playback in guild %s: %s", self.guild_id, exc)

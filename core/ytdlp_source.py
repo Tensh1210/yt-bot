@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -15,6 +16,7 @@ MAX_QUERY_LENGTH = 200
 MAX_ERROR_LENGTH = 300
 LOOKUP_TIMEOUT_SECONDS = 15
 YTMUSIC_WATCH_URL = "https://music.youtube.com/watch?v="
+AUDIO_FORMAT = "bestaudio[abr<=128]/bestaudio/best"
 
 
 class TrackLookupError(Exception):
@@ -48,12 +50,15 @@ def _is_url(value: str) -> bool:
 
 
 def _resolve_ytmusic_query(query: str) -> str | None:
+    start = time.perf_counter()
     try:
         ytmusic = YTMusic()
         results = ytmusic.search(query, filter="songs", limit=1)
     except Exception as exc:
         logging.warning("YouTube Music search failed for %r: %s", query, exc)
         return None
+    finally:
+        logging.info("YouTube Music search for %r completed in %.2fs", query, time.perf_counter() - start)
 
     if not results:
         return None
@@ -62,6 +67,7 @@ def _resolve_ytmusic_query(query: str) -> str | None:
     if not video_id:
         return None
 
+    logging.info("YouTube Music matched %r to video id %s", query, video_id)
     return f"{YTMUSIC_WATCH_URL}{video_id}"
 
 
@@ -74,14 +80,16 @@ def _extract(query: str) -> Track:
         ydl_query = f"ytsearch1:{query}"
 
     options: dict[str, Any] = {
-        "format": "bestaudio[abr<=160]/bestaudio/best",
+        "format": AUDIO_FORMAT,
         "quiet": True,
         "default_search": "ytsearch1",
         "noplaylist": True,
     }
 
+    start = time.perf_counter()
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(ydl_query, download=False)
+    logging.info("yt-dlp resolved %r in %.2fs", ydl_query, time.perf_counter() - start)
 
     if not info:
         raise TrackLookupError("No match found for keyword.")
@@ -110,7 +118,10 @@ async def resolve_track(query: str) -> Track:
         raise TrackLookupError(f"Query is too long. Keep it under {MAX_QUERY_LENGTH} characters.")
 
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_extract, query), timeout=LOOKUP_TIMEOUT_SECONDS)
+        start = time.perf_counter()
+        track = await asyncio.wait_for(asyncio.to_thread(_extract, query), timeout=LOOKUP_TIMEOUT_SECONDS)
+        logging.info("Track lookup for %r completed in %.2fs", query, time.perf_counter() - start)
+        return track
     except asyncio.TimeoutError as exc:
         raise TrackLookupError(f"Track lookup timed out after {LOOKUP_TIMEOUT_SECONDS} seconds. Try again later.") from exc
     except TrackLookupError:
