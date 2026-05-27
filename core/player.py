@@ -14,7 +14,7 @@ from core.ytdlp_source import Track, TrackLookupError, TrackRequest, resolve_tra
 
 DISCORD_MESSAGE_LIMIT = 2000
 MAX_PLAYBACK_FAILURES = 2
-DEFAULT_MAX_QUEUE_SIZE = 50
+DEFAULT_MAX_QUEUE_SIZE = 200
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",

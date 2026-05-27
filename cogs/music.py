@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import random
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.player import GuildPlayerRegistry, PlaybackStartError, QueueFullError
-from core.ytdlp_source import TrackLookupError, resolve_track
+from core.player import GuildPlayer, GuildPlayerRegistry, PlaybackStartError, QueueFullError
+from core.ytdlp_source import TrackLookupError, is_playlist_url, resolve_playlist, resolve_track
 
 
 GENERIC_ERROR_MESSAGE = "Something went wrong while handling that music command."
+
+
+def _playlist_shuffle_enabled() -> bool:
+    return os.getenv("PLAYLIST_SHUFFLE", "1").strip() == "1"
 
 
 class Music(commands.Cog):
@@ -33,13 +39,17 @@ class Music(commands.Cog):
         if voice is None or voice.channel is None:
             return "Join a voice channel first."
 
+        player = self.players.for_guild(guild.id)
+        notify_channel = getattr(interaction_or_context, "channel", None)
+
+        if is_playlist_url(query):
+            return await self._play_playlist(query, player, voice.channel, notify_channel)
+
         try:
             track = await resolve_track(query)
         except TrackLookupError as exc:
             return str(exc)
 
-        player = self.players.for_guild(guild.id)
-        notify_channel = getattr(interaction_or_context, "channel", None)
         try:
             position = await player.enqueue(track, voice.channel, notify_channel)
         except (PlaybackStartError, QueueFullError) as exc:
@@ -48,6 +58,35 @@ class Music(commands.Cog):
         if position == 0:
             return f"Playing now: {track.title}"
         return f"Queued #{position}: {track.title}"
+
+    async def _play_playlist(
+        self,
+        query: str,
+        player: GuildPlayer,
+        voice_channel: discord.VoiceChannel | discord.StageChannel,
+        notify_channel: discord.abc.Messageable | None,
+    ) -> str:
+        try:
+            playlist = await resolve_playlist(query)
+        except TrackLookupError as exc:
+            return str(exc)
+
+        tracks = list(playlist.tracks)
+        shuffled = _playlist_shuffle_enabled()
+        if shuffled:
+            random.shuffle(tracks)
+
+        try:
+            count = await player.enqueue_many(tracks, voice_channel, notify_channel)
+        except (PlaybackStartError, QueueFullError) as exc:
+            return str(exc)
+
+        skipped = playlist.truncated or count < len(tracks)
+        shuffle_note = ", shuffled" if shuffled else ""
+        msg = f"Queued playlist: {playlist.title} ({count} tracks{shuffle_note})."
+        if skipped:
+            msg += " Extra tracks were skipped."
+        return msg
 
     def _player_for(self, interaction_or_context: discord.Interaction | commands.Context):
         guild = interaction_or_context.guild

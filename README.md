@@ -5,9 +5,9 @@ Private-server Discord music bot MVP using `discord.py`, `yt-dlp`, and FFmpeg.
 ## Features
 
 - Prefix and slash commands.
-- YouTube URL playback.
-- Keyword search playback, with YouTube Music search preferred and `ytsearch1` fallback.
-- Per-server in-memory queue.
+- YouTube URL and keyword search playback, with YouTube Music search preferred.
+- YouTube playlist support: `!play <playlist-url>` queues up to 200 tracks (shuffled by default).
+- Per-server in-memory queue (up to 200 tracks).
 - `play`, `pause`, `resume`, `skip`, `stop`, `queue`, and `nowplaying`.
 - Docker runtime with FFmpeg included.
 
@@ -37,13 +37,16 @@ COMMAND_PREFIX=!
 SYNC_SLASH_COMMANDS=1
 DISCORD_GUILD_ID=
 SEARCH_PROVIDER=ytmusic
-MAX_QUEUE_SIZE=50
+MAX_QUEUE_SIZE=200
 MAX_PLAYLIST_ITEMS=200
 PLAYLIST_LOOKUP_TIMEOUT_SECONDS=30
+PLAYLIST_SHUFFLE=1
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
 Set `SEARCH_PROVIDER=ytdlp` if you want keyword search to skip YouTube Music and use direct `ytsearch1` fallback.
+Set `PLAYLIST_SHUFFLE=0` to disable playlist shuffle and preserve the original playlist order.
+`MAX_PLAYLIST_ITEMS` caps how many tracks are imported from one playlist (default 200); `MAX_QUEUE_SIZE` caps the total queue size across all enqueued tracks.
 
 ## Run Locally
 
@@ -82,5 +85,6 @@ Run these in a Discord server where the bot is installed:
 - `!resume`
 - `!skip`
 - `!stop`
+- `!play https://www.youtube.com/playlist?list=<playlist-id>` — verify playlist title and track count in response.
 
 If slash commands do not appear quickly, set `DISCORD_GUILD_ID` to the server ID and restart the bot.
