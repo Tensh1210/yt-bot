@@ -81,9 +81,16 @@ class Music(commands.Cog):
         except (PlaybackStartError, QueueFullError) as exc:
             return str(exc)
 
-        skipped = playlist.truncated or count < len(tracks)
         shuffle_note = ", shuffled" if shuffled else ""
-        msg = f"Queued playlist: {playlist.title} ({count} tracks{shuffle_note})."
+        skipped = playlist.truncated or count < len(tracks)
+        now = player.current
+
+        if now:
+            remaining = count - 1
+            msg = f"Playing now: {now.title}\nQueued playlist: {playlist.title} ({remaining} more{shuffle_note})."
+        else:
+            msg = f"Queued playlist: {playlist.title} ({count} tracks{shuffle_note})."
+
         if skipped:
             msg += " Extra tracks were skipped."
         return msg
