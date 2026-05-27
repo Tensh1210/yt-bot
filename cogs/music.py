@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import discord
 from discord import app_commands
@@ -8,6 +9,9 @@ from discord.ext import commands
 
 from core.player import GuildPlayerRegistry, PlaybackStartError
 from core.ytdlp_source import TrackLookupError, resolve_track
+
+
+GENERIC_ERROR_MESSAGE = "Something went wrong while handling that music command."
 
 
 class Music(commands.Cog):
@@ -126,6 +130,21 @@ class Music(commands.Cog):
             await ctx.reply("Usage: `!play <YouTube URL or keywords>`", mention_author=False)
             return
         raise error
+
+    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        if isinstance(error, commands.CommandInvokeError) and error.original:
+            error = error.original
+
+        logging.exception("Music prefix command failed", exc_info=error)
+        await ctx.reply(GENERIC_ERROR_MESSAGE, mention_author=False)
+
+    async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
+        logging.exception("Music slash command failed", exc_info=error)
+
+        if interaction.response.is_done():
+            await interaction.followup.send(GENERIC_ERROR_MESSAGE)
+        else:
+            await interaction.response.send_message(GENERIC_ERROR_MESSAGE)
 
 
 async def setup(bot: commands.Bot) -> None:
