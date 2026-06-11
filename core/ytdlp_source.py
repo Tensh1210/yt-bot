@@ -95,11 +95,22 @@ def is_playlist_url(value: str) -> bool:
     if host not in {"youtube.com", "music.youtube.com", "youtu.be"}:
         return False
 
-    query = parse_qs(parsed.query)
-    if query.get("list", [""])[0]:
+    if parsed.path.rstrip("/") == "/playlist":
         return True
 
-    return parsed.path.rstrip("/") == "/playlist"
+    query = parse_qs(parsed.query)
+    if not query.get("list", [""])[0]:
+        return False
+
+    # URLs that point at a specific video (watch?v=... or youtu.be/<id>) play
+    # that single video even when a list= parameter is present; queueing the
+    # whole playlist requires an explicit /playlist URL.
+    if query.get("v", [""])[0]:
+        return False
+    if host == "youtu.be" and parsed.path.strip("/"):
+        return False
+
+    return True
 
 
 def _resolve_ytmusic_query(query: str) -> str | None:
