@@ -156,6 +156,12 @@ class Music(commands.Cog):
     async def prefix_nowplaying(self, ctx: commands.Context) -> None:
         await ctx.reply(await self._control(ctx, "nowplaying"), mention_author=False)
 
+    async def _slash_control(self, interaction: discord.Interaction, action: str) -> None:
+        # Defer first: the player lock may be busy (e.g. voice connect), and
+        # Discord voids interactions that are not acknowledged within 3 seconds.
+        await interaction.response.defer()
+        await interaction.followup.send(await self._control(interaction, action))
+
     @app_commands.command(name="play", description="Play a YouTube URL or keyword search result.")
     @app_commands.describe(query="YouTube URL or search keywords")
     async def slash_play(self, interaction: discord.Interaction, query: str) -> None:
@@ -165,38 +171,56 @@ class Music(commands.Cog):
 
     @app_commands.command(name="pause", description="Pause the current track.")
     async def slash_pause(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "pause"))
+        await self._slash_control(interaction, "pause")
 
     @app_commands.command(name="resume", description="Resume the paused track.")
     async def slash_resume(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "resume"))
+        await self._slash_control(interaction, "resume")
 
     @app_commands.command(name="skip", description="Skip the current track.")
     async def slash_skip(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "skip"))
+        await self._slash_control(interaction, "skip")
 
     @app_commands.command(name="skipplaylist", description="Skip the current playlist and remove its tracks from queue.")
     async def slash_skipplaylist(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "skipplaylist"))
+        await self._slash_control(interaction, "skipplaylist")
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue.")
     async def slash_stop(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "stop"))
+        await self._slash_control(interaction, "stop")
 
     @app_commands.command(name="queue", description="Show the current queue.")
     async def slash_queue(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "queue"))
+        await self._slash_control(interaction, "queue")
 
     @app_commands.command(name="nowplaying", description="Show the current track.")
     async def slash_nowplaying(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(await self._control(interaction, "nowplaying"))
+        await self._slash_control(interaction, "nowplaying")
 
-    @prefix_play.error
-    async def prefix_play_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
-        if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.reply("Usage: `!play <YouTube URL or keywords>`", mention_author=False)
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        # Leave voice when the last human listener exits the bot's channel.
+        if member.bot or before.channel is None or before.channel == after.channel:
             return
-        raise error
+
+        player = self.players.get(member.guild.id)
+        if player is None:
+            return
+
+        voice_client = player.voice_client
+        if voice_client is None or voice_client.channel != before.channel:
+            return
+
+        if any(not m.bot for m in before.channel.members):
+            return
+
+        logging.info("Voice channel %s is empty; stopping playback in guild %s.", before.channel.id, member.guild.id)
+        await player.stop()
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         if isinstance(error, commands.CommandInvokeError) and error.original:

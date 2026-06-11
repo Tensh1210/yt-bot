@@ -41,11 +41,13 @@ MAX_QUEUE_SIZE=200
 MAX_PLAYLIST_ITEMS=200
 PLAYLIST_LOOKUP_TIMEOUT_SECONDS=30
 PLAYLIST_SHUFFLE=1
+IDLE_DISCONNECT_SECONDS=300
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
 Set `SEARCH_PROVIDER=ytmusic` to use YouTube Music search instead of direct YouTube search.
 Set `PLAYLIST_SHUFFLE=0` to disable playlist shuffle and preserve the original playlist order.
+`IDLE_DISCONNECT_SECONDS` controls how long the bot stays in voice after the queue empties (default 300, set 0 to never auto-leave). The bot also leaves immediately when every human listener exits its voice channel.
 `MAX_PLAYLIST_ITEMS` caps how many tracks are imported from one playlist (default 200); `MAX_QUEUE_SIZE` caps the total queue size across all enqueued tracks.
 
 ## Run Locally
