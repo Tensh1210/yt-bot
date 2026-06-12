@@ -352,7 +352,9 @@ class GuildPlayer:
             elif self.voice_client.channel != voice_channel:
                 await self.voice_client.move_to(voice_channel)
 
-            source = discord.FFmpegPCMAudio(track.stream_url, **FFMPEG_OPTIONS)
+            # FFmpegOpusAudio lets ffmpeg encode Opus directly, skipping the
+            # PCM round-trip and the Python-side re-encode that costs extra CPU.
+            source = discord.FFmpegOpusAudio(track.stream_url, **FFMPEG_OPTIONS)
             self._playback_generation += 1
             generation = self._playback_generation
             self.voice_client.play(
