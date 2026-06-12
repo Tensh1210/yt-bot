@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +18,11 @@ from core.config import get_config
 MAX_QUERY_LENGTH = 200
 MAX_ERROR_LENGTH = 300
 LOOKUP_TIMEOUT_SECONDS = 15
+# Resolved tracks are cached so repeated requests and prefetched queue heads
+# skip the multi-second yt-dlp lookup. The TTL stays far below the ~6h stream
+# URL lifetime so a cached URL is always still playable.
+RESOLVE_CACHE_TTL_SECONDS = 2 * 60 * 60
+RESOLVE_CACHE_MAX_ENTRIES = 200
 YTMUSIC_WATCH_URL = "https://music.youtube.com/watch?v="
 YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v="
 AUDIO_FORMAT = "bestaudio[abr<=128]/bestaudio/best"
@@ -45,6 +51,36 @@ class PlaylistLookup:
     title: str
     tracks: list[TrackRequest]
     truncated: bool
+
+
+# Only touched from the event loop (resolve_track), so no lock is needed.
+_resolve_cache: OrderedDict[str, tuple[Track, float]] = OrderedDict()
+
+
+def _resolve_cache_get(query: str) -> Track | None:
+    entry = _resolve_cache.get(query)
+    if entry is None:
+        return None
+    track, expires_at = entry
+    if time.monotonic() >= expires_at:
+        del _resolve_cache[query]
+        return None
+    _resolve_cache.move_to_end(query)
+    return track
+
+
+def _resolve_cache_put(query: str, track: Track) -> None:
+    expires_at = time.monotonic() + RESOLVE_CACHE_TTL_SECONDS
+    _resolve_cache[query] = (track, expires_at)
+    _resolve_cache.move_to_end(query)
+    # Also key by the canonical video URL: a track queued after a keyword
+    # search is re-resolved by webpage_url right before playback, and this
+    # second key turns that lookup into a cache hit.
+    if track.webpage_url != query:
+        _resolve_cache[track.webpage_url] = (track, expires_at)
+        _resolve_cache.move_to_end(track.webpage_url)
+    while len(_resolve_cache) > RESOLVE_CACHE_MAX_ENTRIES:
+        _resolve_cache.popitem(last=False)
 
 
 def _clean_error_message(error: Exception) -> str:
@@ -231,10 +267,16 @@ async def resolve_track(query: str) -> Track:
     if len(query) > MAX_QUERY_LENGTH:
         raise TrackLookupError(f"Query is too long. Keep it under {MAX_QUERY_LENGTH} characters.")
 
+    cached = _resolve_cache_get(query)
+    if cached is not None:
+        logging.info("Resolve cache hit for %r", query)
+        return cached
+
     try:
         start = time.perf_counter()
         track = await asyncio.wait_for(asyncio.to_thread(_extract, query), timeout=LOOKUP_TIMEOUT_SECONDS)
         logging.info("Track lookup for %r completed in %.2fs", query, time.perf_counter() - start)
+        _resolve_cache_put(query, track)
         return track
     except asyncio.TimeoutError as exc:
         raise TrackLookupError(f"Track lookup timed out after {LOOKUP_TIMEOUT_SECONDS} seconds. Try again later.") from exc
