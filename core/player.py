@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from collections import deque
 from dataclasses import dataclass, replace
 
 import discord
 
+from core.config import get_config
 from core.ytdlp_source import Track, TrackLookupError, TrackRequest, resolve_track
 
 
 DISCORD_MESSAGE_LIMIT = 2000
 MAX_PLAYBACK_FAILURES = 2
-DEFAULT_MAX_QUEUE_SIZE = 200
-DEFAULT_IDLE_DISCONNECT_SECONDS = 300
 
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
@@ -37,25 +35,6 @@ class PlaybackStartError(Exception):
 
 class QueueFullError(Exception):
     pass
-
-
-def _max_queue_size() -> int:
-    raw_value = os.getenv("MAX_QUEUE_SIZE", str(DEFAULT_MAX_QUEUE_SIZE))
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return DEFAULT_MAX_QUEUE_SIZE
-    return max(1, value)
-
-
-def _idle_disconnect_seconds() -> int:
-    """Seconds to stay in voice after the queue empties; 0 disables auto-leave."""
-    raw_value = os.getenv("IDLE_DISCONNECT_SECONDS", str(DEFAULT_IDLE_DISCONNECT_SECONDS))
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return DEFAULT_IDLE_DISCONNECT_SECONDS
-    return max(0, value)
 
 
 def _to_track_request(track: Track | TrackRequest) -> TrackRequest:
@@ -90,8 +69,9 @@ class GuildPlayer:
         notify_channel: discord.abc.Messageable | None = None,
     ) -> int:
         async with self.lock:
-            if len(self.queue) >= _max_queue_size():
-                raise QueueFullError(f"Queue is full. Limit is {_max_queue_size()} tracks.")
+            max_queue_size = get_config().max_queue_size
+            if len(self.queue) >= max_queue_size:
+                raise QueueFullError(f"Queue is full. Limit is {max_queue_size} tracks.")
 
             request = _to_track_request(track)
             start_now = self._idle_locked()
@@ -124,7 +104,7 @@ class GuildPlayer:
             if not tracks:
                 return 0
 
-            max_queue_size = _max_queue_size()
+            max_queue_size = get_config().max_queue_size
             available_slots = max_queue_size - len(self.queue)
             if available_slots <= 0:
                 raise QueueFullError(f"Queue is full. Limit is {max_queue_size} tracks.")
@@ -277,7 +257,8 @@ class GuildPlayer:
             self._idle_timer = None
 
     def _schedule_idle_disconnect_locked(self) -> None:
-        timeout = _idle_disconnect_seconds()
+        # Seconds to stay in voice after the queue empties; 0 disables auto-leave.
+        timeout = get_config().idle_disconnect_seconds
         if timeout <= 0 or self.voice_client is None:
             return
         self._cancel_idle_timer_locked()

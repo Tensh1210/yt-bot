@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -11,12 +10,12 @@ from urllib.parse import parse_qs, urlparse
 import yt_dlp
 from ytmusicapi import YTMusic
 
+from core.config import get_config
+
 
 MAX_QUERY_LENGTH = 200
 MAX_ERROR_LENGTH = 300
 LOOKUP_TIMEOUT_SECONDS = 15
-DEFAULT_MAX_PLAYLIST_ITEMS = 200
-DEFAULT_PLAYLIST_LOOKUP_TIMEOUT_SECONDS = 30
 YTMUSIC_WATCH_URL = "https://music.youtube.com/watch?v="
 YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v="
 AUDIO_FORMAT = "bestaudio[abr<=128]/bestaudio/best"
@@ -45,23 +44,6 @@ class PlaylistLookup:
     title: str
     tracks: list[TrackRequest]
     truncated: bool
-
-
-def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    raw_value = os.getenv(name, str(default))
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return default
-    return max(minimum, value)
-
-
-def _max_playlist_items() -> int:
-    return _env_int("MAX_PLAYLIST_ITEMS", DEFAULT_MAX_PLAYLIST_ITEMS)
-
-
-def _playlist_lookup_timeout_seconds() -> int:
-    return _env_int("PLAYLIST_LOOKUP_TIMEOUT_SECONDS", DEFAULT_PLAYLIST_LOOKUP_TIMEOUT_SECONDS)
 
 
 def _clean_error_message(error: Exception) -> str:
@@ -138,7 +120,7 @@ def _resolve_ytmusic_query(query: str) -> str | None:
 def _extract(query: str) -> Track:
     if _is_url(query):
         ydl_query = query
-    elif os.getenv("SEARCH_PROVIDER", "ytdlp").lower() == "ytmusic":
+    elif get_config().search_provider == "ytmusic":
         ydl_query = _resolve_ytmusic_query(query) or f"ytsearch1:{query}"
     else:
         ydl_query = f"ytsearch1:{query}"
@@ -197,7 +179,7 @@ def _extract_playlist(query: str) -> PlaylistLookup:
     if not is_playlist_url(query):
         raise TrackLookupError("This URL does not look like a supported YouTube playlist.")
 
-    max_items = _max_playlist_items()
+    max_items = get_config().max_playlist_items
     options: dict[str, Any] = {
         "extract_flat": True,
         "ignoreerrors": True,
@@ -255,7 +237,7 @@ async def resolve_playlist(query: str) -> PlaylistLookup:
     if not query:
         raise TrackLookupError("Playlist URL cannot be empty.")
 
-    timeout_seconds = _playlist_lookup_timeout_seconds()
+    timeout_seconds = get_config().playlist_lookup_timeout_seconds
     try:
         start = time.perf_counter()
         playlist = await asyncio.wait_for(asyncio.to_thread(_extract_playlist, query), timeout=timeout_seconds)

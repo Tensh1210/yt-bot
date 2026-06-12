@@ -2,22 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import random
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core.config import get_config
 from core.player import GuildPlayer, GuildPlayerRegistry, PlaybackStartError, QueueFullError
 from core.ytdlp_source import TrackLookupError, is_playlist_url, resolve_playlist, resolve_track
 
 
 GENERIC_ERROR_MESSAGE = "Something went wrong while handling that music command."
-
-
-def _playlist_shuffle_enabled() -> bool:
-    return os.getenv("PLAYLIST_SHUFFLE", "1").strip() == "1"
 
 
 class Music(commands.Cog):
@@ -72,7 +68,7 @@ class Music(commands.Cog):
             return str(exc)
 
         tracks = list(playlist.tracks)
-        shuffled = _playlist_shuffle_enabled()
+        shuffled = get_config().playlist_shuffle
         if shuffled:
             random.shuffle(tracks)
 

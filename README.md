@@ -49,6 +49,7 @@ Set `SEARCH_PROVIDER=ytmusic` to use YouTube Music search instead of direct YouT
 Set `PLAYLIST_SHUFFLE=0` to disable playlist shuffle and preserve the original playlist order.
 `IDLE_DISCONNECT_SECONDS` controls how long the bot stays in voice after the queue empties (default 300, set 0 to never auto-leave). The bot also leaves immediately when every human listener exits its voice channel.
 `MAX_PLAYLIST_ITEMS` caps how many tracks are imported from one playlist (default 200); `MAX_QUEUE_SIZE` caps the total queue size across all enqueued tracks.
+All environment variables are validated once at startup; the bot refuses to start with a clear error if any value is invalid.
 
 ## Run Locally
 

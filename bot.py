@@ -1,24 +1,21 @@
 import asyncio
 import logging
-import os
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+
+from core.config import get_config, init_config
 
 
 class MusicBot(commands.Bot):
     async def setup_hook(self) -> None:
         await self.load_extension("cogs.music")
 
-        if os.getenv("SYNC_SLASH_COMMANDS", "1") == "1":
-            guild_id = os.getenv("DISCORD_GUILD_ID")
-            if guild_id:
-                try:
-                    guild = discord.Object(id=int(guild_id))
-                except ValueError as exc:
-                    raise RuntimeError("DISCORD_GUILD_ID must be a numeric Discord server ID") from exc
-
+        config = get_config()
+        if config.sync_slash_commands:
+            if config.discord_guild_id is not None:
+                guild = discord.Object(id=config.discord_guild_id)
                 self.tree.copy_global_to(guild=guild)
                 await self.tree.sync(guild=guild)
             else:
@@ -29,22 +26,21 @@ async def main() -> None:
     load_dotenv()
     logging.basicConfig(level=logging.INFO)
 
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        raise RuntimeError("DISCORD_TOKEN is required")
+    # Parse all environment variables up front so bad values stop the bot here.
+    config = init_config()
 
     intents = discord.Intents.default()
     intents.guilds = True
     intents.voice_states = True
     intents.message_content = True
 
-    bot = MusicBot(command_prefix=os.getenv("COMMAND_PREFIX", "!"), intents=intents)
+    bot = MusicBot(command_prefix=config.command_prefix, intents=intents)
 
     @bot.event
     async def on_ready() -> None:
         logging.info("Logged in as %s (%s)", bot.user, bot.user.id if bot.user else "unknown")
 
-    await bot.start(token)
+    await bot.start(config.discord_token)
 
 
 if __name__ == "__main__":
