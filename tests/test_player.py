@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+import core.player
 from core.player import GuildPlayer, QueuedTrack, QueueFullError, _to_track_request
 from core.ytdlp_source import Track, TrackRequest
 
@@ -136,6 +137,63 @@ def test_queue_summary_when_idle(app_config):
     summary = run(scenario())
     assert "Nothing is playing." in summary
     assert "Queue is empty." in summary
+
+
+@pytest.fixture
+def resolved_urls(monkeypatch):
+    """Record URLs the player resolves during prefetch instead of hitting yt-dlp."""
+    urls: list[str] = []
+
+    async def fake_resolve(url: str) -> Track:
+        urls.append(url)
+        return Track(title="T", webpage_url=url, stream_url="https://stream")
+
+    monkeypatch.setattr(core.player, "resolve_track", fake_resolve)
+    return urls
+
+
+def test_enqueue_while_busy_prefetches_queue_head(app_config, resolved_urls):
+    async def scenario():
+        player = await make_busy_player()
+        await player.enqueue(make_track(1), VOICE_CHANNEL)
+        assert player._prefetch_task is not None
+        await player._prefetch_task
+
+    run(scenario())
+    assert resolved_urls == ["https://www.youtube.com/watch?v=video1"]
+
+
+def test_prefetch_not_rescheduled_while_head_unchanged(app_config, resolved_urls):
+    async def scenario():
+        player = await make_busy_player()
+        await player.enqueue(make_track(1), VOICE_CHANNEL)
+        first_task = player._prefetch_task
+        # A second enqueue keeps the same head, so the running prefetch stays.
+        await player.enqueue(make_track(2), VOICE_CHANNEL)
+        assert player._prefetch_task is first_task
+        await first_task
+
+    run(scenario())
+    assert resolved_urls == ["https://www.youtube.com/watch?v=video1"]
+
+
+def test_stop_cancels_pending_prefetch(app_config, monkeypatch):
+    async def never_resolve(url: str) -> Track:
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(core.player, "resolve_track", never_resolve)
+
+    async def scenario():
+        player = await make_busy_player()
+        await player.enqueue(make_track(1), VOICE_CHANNEL)
+        task = player._prefetch_task
+        await player.stop()
+        assert player._prefetch_task is None
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run(scenario())
 
 
 def test_controls_without_voice_client_report_nothing_playing(app_config):

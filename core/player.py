@@ -61,6 +61,10 @@ class GuildPlayer:
         self._starting = False
         # Disconnects from voice after the queue stays empty for a while.
         self._idle_timer: asyncio.Task | None = None
+        # Warms the resolve cache for the next queued track while audio plays,
+        # so track transitions skip the multi-second network lookup.
+        self._prefetch_task: asyncio.Task | None = None
+        self._prefetch_url: str | None = None
 
     async def enqueue(
         self,
@@ -85,7 +89,11 @@ class GuildPlayer:
                 QueuedTrack(track=request, voice_channel=voice_channel, notify_channel=notify_channel)
             )
             position = len(self.queue)
-            next_item = self._take_next_locked() if start_now else None
+            if start_now:
+                next_item = self._take_next_locked()
+            else:
+                next_item = None
+                self._schedule_prefetch_locked()
 
         if next_item is None:
             return position
@@ -121,7 +129,11 @@ class GuildPlayer:
                         playlist_id=pid,
                     )
                 )
-            next_item = self._take_next_locked() if self._idle_locked() else None
+            if self._idle_locked():
+                next_item = self._take_next_locked()
+            else:
+                next_item = None
+                self._schedule_prefetch_locked()
 
         if next_item is not None:
             queued, generation = next_item
@@ -183,6 +195,7 @@ class GuildPlayer:
             self._playback_generation += 1
             self._playback_failures = 0
             self._cancel_idle_timer_locked()
+            self._cancel_prefetch_locked()
 
             if self.voice_client is not None:
                 voice_client = self.voice_client
@@ -256,6 +269,41 @@ class GuildPlayer:
             self._idle_timer.cancel()
             self._idle_timer = None
 
+    def _cancel_prefetch_locked(self) -> None:
+        if self._prefetch_task is not None:
+            self._prefetch_task.cancel()
+            self._prefetch_task = None
+            self._prefetch_url = None
+
+    def _schedule_prefetch_locked(self) -> None:
+        """Resolve the queue head in the background so its stream URL sits in
+        the resolve cache when its turn comes. Lock must be held.
+
+        A wrong guess (skip, skipplaylist) just wastes one lookup: the cache
+        entry goes unused and the real head resolves normally.
+        """
+        if not self.queue:
+            return
+        head = self.queue[0].track
+        if head.stream_url:
+            return
+        if (
+            self._prefetch_task is not None
+            and not self._prefetch_task.done()
+            and self._prefetch_url == head.webpage_url
+        ):
+            return
+        self._cancel_prefetch_locked()
+        self._prefetch_url = head.webpage_url
+        self._prefetch_task = self.loop.create_task(self._prefetch(head.webpage_url))
+
+    async def _prefetch(self, url: str) -> None:
+        try:
+            await resolve_track(url)  # the result lands in the resolve cache
+        except TrackLookupError as exc:
+            # The playback-time resolve will surface this to the user.
+            logging.info("Prefetch failed for %r in guild %s: %s", url, self.guild_id, exc)
+
     def _schedule_idle_disconnect_locked(self) -> None:
         # Seconds to stay in voice after the queue empties; 0 disables auto-leave.
         timeout = get_config().idle_disconnect_seconds
@@ -311,6 +359,7 @@ class GuildPlayer:
                     if failure is None and track is not None:
                         try:
                             await self._begin_playback_locked(queued.voice_channel, track)
+                            self._schedule_prefetch_locked()
                             self._starting = False
                             return
                         except PlaybackStartError as exc:
