@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -95,11 +96,24 @@ def is_playlist_url(value: str) -> bool:
     return True
 
 
+# YTMusic session setup is slow, so one shared instance serves all searches.
+# The lock only guards creation; searches run concurrently on the shared session.
+_ytmusic_lock = threading.Lock()
+_ytmusic: YTMusic | None = None
+
+
+def _get_ytmusic() -> YTMusic:
+    global _ytmusic
+    with _ytmusic_lock:
+        if _ytmusic is None:
+            _ytmusic = YTMusic()
+        return _ytmusic
+
+
 def _resolve_ytmusic_query(query: str) -> str | None:
     start = time.perf_counter()
     try:
-        ytmusic = YTMusic()
-        results = ytmusic.search(query, filter="songs", limit=1)
+        results = _get_ytmusic().search(query, filter="songs", limit=1)
     except Exception as exc:
         logging.warning("YouTube Music search failed for %r: %s", query, exc)
         return None
