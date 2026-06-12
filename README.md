@@ -42,6 +42,7 @@ MAX_PLAYLIST_ITEMS=200
 PLAYLIST_LOOKUP_TIMEOUT_SECONDS=30
 PLAYLIST_SHUFFLE=1
 IDLE_DISCONNECT_SECONDS=300
+YTDLP_AUTO_UPDATE=1
 ```
 
 Use `DISCORD_GUILD_ID` during testing if you want slash commands to sync immediately to one server. Leave it empty for global slash command sync.
@@ -49,6 +50,7 @@ Set `SEARCH_PROVIDER=ytmusic` to use YouTube Music search instead of direct YouT
 Set `PLAYLIST_SHUFFLE=0` to disable playlist shuffle and preserve the original playlist order.
 `IDLE_DISCONNECT_SECONDS` controls how long the bot stays in voice after the queue empties (default 300, set 0 to never auto-leave). The bot also leaves immediately when every human listener exits its voice channel.
 `MAX_PLAYLIST_ITEMS` caps how many tracks are imported from one playlist (default 200); `MAX_QUEUE_SIZE` caps the total queue size across all enqueued tracks.
+`YTDLP_AUTO_UPDATE=1` (Docker only) upgrades yt-dlp to the latest release on every container start, since YouTube changes break old yt-dlp versions quickly. Set 0 to skip.
 All environment variables are validated once at startup; the bot refuses to start with a clear error if any value is invalid.
 
 ## Run Locally

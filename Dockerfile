@@ -14,4 +14,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-CMD ["python", "bot.py"]
+
+# The entrypoint upgrades yt-dlp on start (YTDLP_AUTO_UPDATE=0 to skip),
+# then execs the bot. sed strips CR in case the file was checked out CRLF.
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
+ENTRYPOINT ["./docker-entrypoint.sh"]
