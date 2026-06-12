@@ -1,0 +1,7 @@
+[tool.ruff]
+target-version = "py311"
+# Existing code favors descriptive one-line statements over wrapping.
+line-length = 130
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -64,6 +64,16 @@ pip install -r requirements.txt
 python bot.py
 ```
 
+## Lint & Test
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
+
+CI (GitHub Actions) runs the same lint and test steps on every push and pull request.
+
 ## Run With Docker
 
 ```bash
