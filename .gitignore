@@ -13,3 +13,9 @@ venv/
 dist/
 build/
 *.egg-info/
+
+# Local AI tooling and working artifacts - not part of the bot source
+.claude/
+plans/
+.repomixignore
+release-manifest.json
