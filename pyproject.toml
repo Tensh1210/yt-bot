@@ -5,3 +5,6 @@ line-length = 130
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so tests import core/ and cogs/ no matter
+# how pytest is invoked (bare `pytest` does not add the CWD, `python -m` does).
+pythonpath = ["."]
